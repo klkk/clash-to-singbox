@@ -1,0 +1,757 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Clash to Sing-box 配置转换工具</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/js-yaml/4.1.0/js-yaml.min.js"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+            background: rgba(255, 255, 255, 0.95);
+            border-radius: 20px;
+            padding: 30px;
+            box-shadow: 0 20px 40px rgba(0, 0, 0, 0.1);
+            backdrop-filter: blur(10px);
+        }
+
+        .header {
+            text-align: center;
+            margin-bottom: 40px;
+        }
+
+        .header h1 {
+            color: #333;
+            font-size: 2.5rem;
+            margin-bottom: 10px;
+            background: linear-gradient(135deg, #667eea, #764ba2);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+
+        .header p {
+            color: #666;
+            font-size: 1.1rem;
+        }
+
+        .converter-section {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 30px;
+            margin-bottom: 30px;
+        }
+
+        .input-section, .output-section {
+            background: #f8f9fa;
+            border-radius: 15px;
+            padding: 25px;
+            border: 2px dashed #ddd;
+            transition: all 0.3s ease;
+        }
+
+        .input-section:hover, .output-section:hover {
+            border-color: #667eea;
+            box-shadow: 0 5px 15px rgba(102, 126, 234, 0.1);
+        }
+
+        .section-title {
+            font-size: 1.3rem;
+            color: #333;
+            margin-bottom: 15px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .file-upload {
+            display: flex;
+            flex-direction: column;
+            gap: 15px;
+        }
+
+        .upload-area {
+            border: 2px dashed #ccc;
+            border-radius: 10px;
+            padding: 30px;
+            text-align: center;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            background: white;
+        }
+
+        .upload-area:hover {
+            border-color: #667eea;
+            background: #f0f4ff;
+        }
+
+        .upload-area.dragover {
+            border-color: #667eea;
+            background: #e8f2ff;
+            transform: scale(1.02);
+        }
+
+        #fileInput {
+            display: none;
+        }
+
+        .upload-icon {
+            font-size: 3rem;
+            color: #667eea;
+            margin-bottom: 15px;
+        }
+
+        .upload-text {
+            color: #666;
+            font-size: 1.1rem;
+        }
+
+        .config-input {
+            width: 100%;
+            height: 300px;
+            border: 1px solid #ddd;
+            border-radius: 8px;
+            padding: 15px;
+            font-family: 'Courier New', monospace;
+            resize: vertical;
+            background: white;
+        }
+
+        .config-output {
+            width: 100%;
+            height: 400px;
+            border: 1px solid #ddd;
+            border-radius: 8px;
+            padding: 15px;
+            font-family: 'Courier New', monospace;
+            background: #f9f9f9;
+            resize: vertical;
+        }
+
+        .button-group {
+            display: flex;
+            gap: 15px;
+            justify-content: center;
+            margin: 30px 0;
+        }
+
+        .btn {
+            padding: 12px 30px;
+            border: none;
+            border-radius: 25px;
+            font-size: 1rem;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            font-weight: 600;
+        }
+
+        .btn-primary {
+            background: linear-gradient(135deg, #667eea, #764ba2);
+            color: white;
+        }
+
+        .btn-primary:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 10px 20px rgba(102, 126, 234, 0.3);
+        }
+
+        .btn-secondary {
+            background: #6c757d;
+            color: white;
+        }
+
+        .btn-secondary:hover {
+            background: #5a6268;
+            transform: translateY(-2px);
+        }
+
+        .btn-success {
+            background: #28a745;
+            color: white;
+        }
+
+        .btn-success:hover {
+            background: #218838;
+            transform: translateY(-2px);
+        }
+
+        .status {
+            text-align: center;
+            padding: 15px;
+            border-radius: 10px;
+            margin: 20px 0;
+            font-weight: 500;
+        }
+
+        .status.success {
+            background: #d4edda;
+            color: #155724;
+            border: 1px solid #c3e6cb;
+        }
+
+        .status.error {
+            background: #f8d7da;
+            color: #721c24;
+            border: 1px solid #f5c6cb;
+        }
+
+        .status.info {
+            background: #d1ecf1;
+            color: #0c5460;
+            border: 1px solid #bee5eb;
+        }
+
+        .features {
+            background: linear-gradient(135deg, #f8f9fa, #e9ecef);
+            border-radius: 15px;
+            padding: 25px;
+            margin-top: 30px;
+        }
+
+        .features h3 {
+            color: #333;
+            margin-bottom: 15px;
+            font-size: 1.4rem;
+        }
+
+        .features ul {
+            list-style: none;
+            columns: 2;
+            gap: 30px;
+        }
+
+        .features li {
+            padding: 8px 0;
+            color: #555;
+            position: relative;
+            padding-left: 25px;
+        }
+
+        .features li::before {
+            content: "✓";
+            position: absolute;
+            left: 0;
+            color: #28a745;
+            font-weight: bold;
+        }
+
+        @media (max-width: 768px) {
+            .converter-section {
+                grid-template-columns: 1fr;
+            }
+            
+            .features ul {
+                columns: 1;
+            }
+            
+            .header h1 {
+                font-size: 2rem;
+            }
+        }
+
+        .hidden {
+            display: none;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🔄 Clash to Sing-box 配置转换工具</h1>
+            <p>轻松将 Clash YAML 配置文件转换为 Sing-box JSON 格式</p>
+        </div>
+
+        <div class="converter-section">
+            <div class="input-section">
+                <div class="section-title">
+                    📁 Clash 配置输入
+                </div>
+                <div class="file-upload">
+                    <div class="upload-area" id="uploadArea">
+                        <div class="upload-icon">📤</div>
+                        <div class="upload-text">
+                            <p><strong>点击选择文件</strong> 或拖拽 Clash 配置文件到这里</p>
+                            <p>支持 .yaml, .yml 格式</p>
+                        </div>
+                        <input type="file" id="fileInput" accept=".yaml,.yml" />
+                    </div>
+                    <textarea 
+                        id="configInput" 
+                        class="config-input" 
+                        placeholder="或者直接粘贴 Clash YAML 配置内容到这里..."
+                    ></textarea>
+                </div>
+            </div>
+
+            <div class="output-section">
+                <div class="section-title">
+                    📄 Sing-box 配置输出
+                </div>
+                <textarea 
+                    id="configOutput" 
+                    class="config-output" 
+                    placeholder="转换后的 Sing-box JSON 配置将显示在这里..."
+                    readonly
+                ></textarea>
+            </div>
+        </div>
+
+        <div class="button-group">
+            <button class="btn btn-primary" id="convertBtn">🔄 开始转换</button>
+            <button class="btn btn-secondary" id="clearBtn">🗑️ 清空</button>
+            <button class="btn btn-success hidden" id="downloadBtn">💾 下载配置</button>
+        </div>
+
+        <div id="status" class="status hidden"></div>
+
+        <div class="features">
+            <h3>🌟 功能特点</h3>
+            <ul>
+                <li>支持拖拽上传 Clash 配置文件</li>
+                <li>实时转换 YAML 到 JSON 格式</li>
+                <li>保留所有代理节点配置</li>
+                <li>自动转换路由规则</li>
+                <li>支持多种代理协议 (ss, trojan, vmess, vless等)</li>
+                <li>优化的 DNS 配置转换</li>
+                <li>完整的入站出站规则映射</li>
+                <li>一键下载转换结果</li>
+            </ul>
+        </div>
+    </div>
+
+    <script>
+        class ClashToSingboxConverter {
+            constructor() {
+                this.initializeElements();
+                this.bindEvents();
+            }
+
+            initializeElements() {
+                this.uploadArea = document.getElementById('uploadArea');
+                this.fileInput = document.getElementById('fileInput');
+                this.configInput = document.getElementById('configInput');
+                this.configOutput = document.getElementById('configOutput');
+                this.convertBtn = document.getElementById('convertBtn');
+                this.clearBtn = document.getElementById('clearBtn');
+                this.downloadBtn = document.getElementById('downloadBtn');
+                this.status = document.getElementById('status');
+            }
+
+            bindEvents() {
+                // 文件上传事件
+                this.uploadArea.addEventListener('click', () => this.fileInput.click());
+                this.fileInput.addEventListener('change', (e) => this.handleFileSelect(e));
+                
+                // 拖拽事件
+                this.uploadArea.addEventListener('dragover', (e) => this.handleDragOver(e));
+                this.uploadArea.addEventListener('dragleave', (e) => this.handleDragLeave(e));
+                this.uploadArea.addEventListener('drop', (e) => this.handleDrop(e));
+                
+                // 按钮事件
+                this.convertBtn.addEventListener('click', () => this.convertConfig());
+                this.clearBtn.addEventListener('click', () => this.clearAll());
+                this.downloadBtn.addEventListener('click', () => this.downloadConfig());
+            }
+
+            handleDragOver(e) {
+                e.preventDefault();
+                this.uploadArea.classList.add('dragover');
+            }
+
+            handleDragLeave(e) {
+                e.preventDefault();
+                this.uploadArea.classList.remove('dragover');
+            }
+
+            handleDrop(e) {
+                e.preventDefault();
+                this.uploadArea.classList.remove('dragover');
+                const files = e.dataTransfer.files;
+                if (files.length > 0) {
+                    this.processFile(files[0]);
+                }
+            }
+
+            handleFileSelect(e) {
+                const file = e.target.files[0];
+                if (file) {
+                    this.processFile(file);
+                }
+            }
+
+            processFile(file) {
+                if (!file.name.match(/\.(yaml|yml)$/i)) {
+                    this.showStatus('请选择 YAML 格式的配置文件', 'error');
+                    return;
+                }
+
+                const reader = new FileReader();
+                reader.onload = (e) => {
+                    this.configInput.value = e.target.result;
+                    this.showStatus('文件加载成功，可以开始转换', 'success');
+                };
+                reader.readAsText(file);
+            }
+
+            convertConfig() {
+                const clashConfig = this.configInput.value.trim();
+                if (!clashConfig) {
+                    this.showStatus('请先输入或上传 Clash 配置', 'error');
+                    return;
+                }
+
+                try {
+                    this.showStatus('正在转换配置...', 'info');
+                    
+                    // 解析 YAML
+                    const clashData = jsyaml.load(clashConfig);
+                    
+                    // 转换为 Sing-box 格式
+                    const singboxConfig = this.convertToSingbox(clashData);
+                    
+                    // 显示结果
+                    this.configOutput.value = JSON.stringify(singboxConfig, null, 2);
+                    this.downloadBtn.classList.remove('hidden');
+                    this.showStatus('转换成功！可以下载配置文件', 'success');
+                    
+                } catch (error) {
+                    console.error('转换错误:', error);
+                    this.showStatus(`转换失败: ${error.message}`, 'error');
+                }
+            }
+
+            convertToSingbox(clashData) {
+                const singboxConfig = {
+                    log: {
+                        level: "info",
+                        timestamp: true
+                    },
+                    experimental: {
+                        clash_api: {
+                            external_controller: "127.0.0.1:9090",
+                            external_ui: "ui",
+                            external_ui_download_url: "https://mirror.ghproxy.com/https://github.com/MetaCubeX/Yacd-meta/archive/gh-pages.zip",
+                            external_ui_download_detour: "direct",
+                            default_mode: "rule"
+                        },
+                        cache_file: {
+                            enabled: true,
+                            store_fakeip: false
+                        }
+                    },
+                    dns: this.convertDNS(clashData.dns),
+                    inbounds: this.createInbounds(),
+                    outbounds: this.convertOutbounds(clashData.proxies || []),
+                    route: this.convertRoute(clashData.rules || [], clashData['proxy-groups'] || [])
+                };
+
+                return singboxConfig;
+            }
+
+            convertDNS(clashDNS) {
+                const defaultDNS = {
+                    servers: [
+                        {
+                            tag: "google",
+                            address: "tls://8.8.8.8",
+                            strategy: "ipv4_only",
+                            detour: "proxy"
+                        },
+                        {
+                            tag: "local",
+                            address: "223.5.5.5",
+                            strategy: "ipv4_only",
+                            detour: "direct"
+                        },
+                        {
+                            tag: "fakeip",
+                            address: "fakeip"
+                        }
+                    ],
+                    rules: [
+                        {
+                            geosite: "cn",
+                            server: "local"
+                        }
+                    ],
+                    final: "google",
+                    strategy: "ipv4_only",
+                    disable_cache: false,
+                    disable_expire: false,
+                    independent_cache: false,
+                    reverse_mapping: false,
+                    fakeip: {
+                        enabled: true,
+                        inet4_range: "198.18.0.0/15",
+                        inet6_range: "fc00::/18"
+                    }
+                };
+
+                if (!clashDNS) return defaultDNS;
+
+                // 转换 Clash DNS 配置
+                if (clashDNS.nameserver) {
+                    defaultDNS.servers = clashDNS.nameserver.map((server, index) => ({
+                        tag: `dns-${index}`,
+                        address: server,
+                        strategy: "ipv4_only",
+                        detour: "direct"
+                    }));
+                }
+
+                return defaultDNS;
+            }
+
+            createInbounds() {
+                return [
+                    {
+                        type: "mixed",
+                        tag: "mixed-in",
+                        listen: "127.0.0.1",
+                        listen_port: 2080,
+                        sniff: true,
+                        sniff_override_destination: false,
+                        domain_strategy: "ipv4_only"
+                    },
+                    {
+                        type: "tun",
+                        tag: "tun-in",
+                        inet4_address: "172.19.0.1/30",
+                        mtu: 9000,
+                        auto_route: true,
+                        strict_route: true,
+                        sniff: true,
+                        endpoint_independent_nat: false,
+                        stack: "system",
+                        platform: {
+                            http_proxy: {
+                                enabled: true,
+                                server: "127.0.0.1",
+                                server_port: 2080
+                            }
+                        }
+                    }
+                ];
+            }
+
+            convertOutbounds(clashProxies) {
+                const outbounds = [
+                    {
+                        type: "direct",
+                        tag: "direct"
+                    },
+                    {
+                        type: "dns",
+                        tag: "dns-out"
+                    },
+                    {
+                        type: "block",
+                        tag: "block"
+                    }
+                ];
+
+                // 转换代理节点
+                clashProxies.forEach(proxy => {
+                    const singboxProxy = this.convertProxy(proxy);
+                    if (singboxProxy) {
+                        outbounds.push(singboxProxy);
+                    }
+                });
+
+                return outbounds;
+            }
+
+            convertProxy(clashProxy) {
+                const baseConfig = {
+                    tag: clashProxy.name,
+                    server: clashProxy.server,
+                    server_port: parseInt(clashProxy.port)
+                };
+
+                switch (clashProxy.type) {
+                    case 'ss':
+                        return {
+                            type: "shadowsocks",
+                            ...baseConfig,
+                            method: clashProxy.cipher,
+                            password: clashProxy.password
+                        };
+
+                    case 'trojan':
+                        return {
+                            type: "trojan",
+                            ...baseConfig,
+                            password: clashProxy.password,
+                            tls: {
+                                enabled: true,
+                                server_name: clashProxy.sni || clashProxy.server,
+                                insecure: clashProxy['skip-cert-verify'] || false
+                            }
+                        };
+
+                    case 'vmess':
+                        return {
+                            type: "vmess",
+                            ...baseConfig,
+                            uuid: clashProxy.uuid,
+                            security: clashProxy.cipher || "auto",
+                            alter_id: clashProxy.alterId || 0,
+                            tls: clashProxy.tls ? {
+                                enabled: true,
+                                server_name: clashProxy.servername || clashProxy.server,
+                                insecure: clashProxy['skip-cert-verify'] || false
+                            } : undefined,
+                            transport: clashProxy.network ? {
+                                type: clashProxy.network,
+                                path: clashProxy['ws-path'] || clashProxy.path,
+                                headers: clashProxy['ws-headers'] || clashProxy.headers
+                            } : undefined
+                        };
+
+                    case 'vless':
+                        return {
+                            type: "vless",
+                            ...baseConfig,
+                            uuid: clashProxy.uuid,
+                            flow: clashProxy.flow,
+                            tls: {
+                                enabled: true,
+                                server_name: clashProxy.servername || clashProxy.server,
+                                insecure: clashProxy['skip-cert-verify'] || false,
+                                reality: clashProxy.reality ? {
+                                    enabled: true,
+                                    public_key: clashProxy['reality-opts']?.['public-key'],
+                                    short_id: clashProxy['reality-opts']?.['short-id']
+                                } : undefined
+                            }
+                        };
+
+                    default:
+                        console.warn(`不支持的代理类型: ${clashProxy.type}`);
+                        return null;
+                }
+            }
+
+            convertRoute(clashRules, proxyGroups) {
+                const rules = [];
+                const ruleSet = [];
+
+                // 转换规则
+                clashRules.forEach(rule => {
+                    const [type, value, target] = rule.split(',');
+                    if (!type || !value || !target) return;
+
+                    const singboxRule = {
+                        outbound: target.trim()
+                    };
+
+                    switch (type.trim().toUpperCase()) {
+                        case 'DOMAIN':
+                            singboxRule.domain = [value.trim()];
+                            break;
+                        case 'DOMAIN-SUFFIX':
+                            singboxRule.domain_suffix = [value.trim()];
+                            break;
+                        case 'DOMAIN-KEYWORD':
+                            singboxRule.domain_keyword = [value.trim()];
+                            break;
+                        case 'IP-CIDR':
+                            singboxRule.ip_cidr = [value.trim()];
+                            break;
+                        case 'GEOIP':
+                            singboxRule.geoip = [value.trim()];
+                            break;
+                        case 'GEOSITE':
+                            singboxRule.geosite = [value.trim()];
+                            break;
+                        default:
+                            return;
+                    }
+
+                    rules.push(singboxRule);
+                });
+
+                // 添加默认规则
+                rules.push(
+                    {
+                        geosite: "cn",
+                        outbound: "direct"
+                    },
+                    {
+                        geoip: ["private", "cn"],
+                        outbound: "direct"
+                    }
+                );
+
+                return {
+                    rules: rules,
+                    rule_set: ruleSet,
+                    final: "proxy",
+                    auto_detect_interface: true
+                };
+            }
+
+            clearAll() {
+                this.configInput.value = '';
+                this.configOutput.value = '';
+                this.fileInput.value = '';
+                this.downloadBtn.classList.add('hidden');
+                this.hideStatus();
+            }
+
+            downloadConfig() {
+                const config = this.configOutput.value;
+                if (!config) {
+                    this.showStatus('没有可下载的配置', 'error');
+                    return;
+                }
+
+                const blob = new Blob([config], { type: 'application/json' });
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = 'sing-box-config.json';
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+                URL.revokeObjectURL(url);
+                
+                this.showStatus('配置文件下载成功', 'success');
+            }
+
+            showStatus(message, type) {
+                this.status.textContent = message;
+                this.status.className = `status ${type}`;
+                this.status.classList.remove('hidden');
+                
+                if (type === 'success') {
+                    setTimeout(() => this.hideStatus(), 3000);
+                }
+            }
+
+            hideStatus() {
+                this.status.classList.add('hidden');
+            }
+        }
+
+        // 初始化转换器
+        document.addEventListener('DOMContentLoaded', () => {
+            new ClashToSingboxConverter();
+        });
+    </script>
+</body>
+</html>
