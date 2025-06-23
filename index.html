@@ -454,9 +454,9 @@
                         }
                     },
                     dns: this.convertDNS(clashData.dns),
-                    inbounds: this.createInbounds(),
-                    outbounds: this.convertOutbounds(clashData.proxies || []),
-                    route: this.convertRoute(clashData.rules || [], clashData['proxy-groups'] || [])
+                    inbounds: this.createInbounds(clashData),
+                    outbounds: this.convertOutbounds(clashData.proxies || [], clashData['proxy-groups'] || []),
+                    route: this.convertRoute(clashData.rules || [], clashData['proxy-groups'] || [], clashData['rule-providers'])
                 };
 
                 return singboxConfig;
@@ -503,52 +503,145 @@
 
                 if (!clashDNS) return defaultDNS;
 
-                // 转换 Clash DNS 配置
+                const servers = [];
+                
+                // 处理 default-nameserver
+                if (clashDNS['default-nameserver']) {
+                    clashDNS['default-nameserver'].forEach((server, index) => {
+                        const dnsServer = this.parseDNSServer(server, `default-${index}`, "direct");
+                        if (dnsServer) servers.push(dnsServer);
+                    });
+                }
+
+                // 处理 nameserver
                 if (clashDNS.nameserver) {
-                    defaultDNS.servers = clashDNS.nameserver.map((server, index) => ({
-                        tag: `dns-${index}`,
-                        address: server,
-                        strategy: "ipv4_only",
-                        detour: "direct"
-                    }));
+                    clashDNS.nameserver.forEach((server, index) => {
+                        const dnsServer = this.parseDNSServer(server, `nameserver-${index}`, "proxy");
+                        if (dnsServer) servers.push(dnsServer);
+                    });
+                }
+
+                // 处理 fallback
+                if (clashDNS.fallback) {
+                    clashDNS.fallback.forEach((server, index) => {
+                        const dnsServer = this.parseDNSServer(server, `fallback-${index}`, "proxy");
+                        if (dnsServer) servers.push(dnsServer);
+                    });
+                }
+
+                // 如果没有找到任何 DNS 服务器，使用默认配置
+                if (servers.length === 0) {
+                    return defaultDNS;
+                }
+
+                // 更新 DNS 配置
+                defaultDNS.servers = servers;
+
+                // 添加 fakeip 服务器
+                if (clashDNS['enhanced-mode'] === 'fake-ip') {
+                    defaultDNS.servers.push({
+                        tag: "fakeip",
+                        address: "fakeip"
+                    });
+                    
+                    // 设置 fake-ip 范围
+                    if (clashDNS['fake-ip-range']) {
+                        const range = clashDNS['fake-ip-range'];
+                        if (range.includes(':')) {
+                            defaultDNS.fakeip.inet6_range = range;
+                        } else {
+                            defaultDNS.fakeip.inet4_range = range;
+                        }
+                    }
                 }
 
                 return defaultDNS;
             }
 
-            createInbounds() {
-                return [
+            parseDNSServer(server, tag, detour) {
+                if (!server || typeof server !== 'string') return null;
+
+                // 处理不同类型的 DNS 服务器地址
+                if (server.startsWith('https://')) {
+                    // DoH 服务器
+                    return {
+                        tag: tag,
+                        address: server,
+                        strategy: "ipv4_only",
+                        detour: detour
+                    };
+                } else if (server.startsWith('tls://')) {
+                    // DoT 服务器
+                    return {
+                        tag: tag,
+                        address: server,
+                        strategy: "ipv4_only",
+                        detour: detour
+                    };
+                } else if (server.includes(':')) {
+                    // 带端口的普通 DNS
+                    return {
+                        tag: tag,
+                        address: server,
+                        strategy: "ipv4_only",
+                        detour: detour
+                    };
+                } else {
+                    // 普通 IP 地址，添加默认端口
+                    return {
+                        tag: tag,
+                        address: `${server}:53`,
+                        strategy: "ipv4_only",
+                        detour: detour
+                    };
+                }
+            }
+
+            createInbounds(clashData) {
+                const inbounds = [
                     {
                         type: "mixed",
                         tag: "mixed-in",
                         listen: "127.0.0.1",
-                        listen_port: 2080,
+                        listen_port: clashData['mixed-port'] || 2080,
                         sniff: true,
                         sniff_override_destination: false,
                         domain_strategy: "ipv4_only"
-                    },
-                    {
+                    }
+                ];
+
+                // 处理 TUN 配置
+                if (clashData.tun && clashData.tun.enable) {
+                    const tunConfig = {
                         type: "tun",
                         tag: "tun-in",
                         inet4_address: "172.19.0.1/30",
-                        mtu: 9000,
-                        auto_route: true,
-                        strict_route: true,
+                        mtu: clashData.tun.mtu || 9000,
+                        auto_route: clashData.tun['auto-route'] !== false,
+                        strict_route: clashData.tun['strict-route'] !== false,
                         sniff: true,
-                        endpoint_independent_nat: false,
-                        stack: "system",
-                        platform: {
+                        endpoint_independent_nat: clashData.tun['endpoint-independent-nat'] === true,
+                        stack: clashData.tun.stack || "system"
+                    };
+
+                    // 添加平台特定配置
+                    if (clashData['mixed-port']) {
+                        tunConfig.platform = {
                             http_proxy: {
                                 enabled: true,
                                 server: "127.0.0.1",
-                                server_port: 2080
+                                server_port: clashData['mixed-port']
                             }
-                        }
+                        };
                     }
-                ];
+
+                    inbounds.push(tunConfig);
+                }
+
+                return inbounds;
             }
 
-            convertOutbounds(clashProxies) {
+            convertOutbounds(clashProxies, proxyGroups) {
                 const outbounds = [
                     {
                         type: "direct",
@@ -565,14 +658,104 @@
                 ];
 
                 // 转换代理节点
-                clashProxies.forEach(proxy => {
-                    const singboxProxy = this.convertProxy(proxy);
-                    if (singboxProxy) {
-                        outbounds.push(singboxProxy);
-                    }
-                });
+                if (clashProxies && clashProxies.length > 0) {
+                    clashProxies.forEach(proxy => {
+                        const singboxProxy = this.convertProxy(proxy);
+                        if (singboxProxy) {
+                            outbounds.push(singboxProxy);
+                        }
+                    });
+                }
+
+                // 转换代理组
+                if (proxyGroups && proxyGroups.length > 0) {
+                    proxyGroups.forEach(group => {
+                        const singboxGroup = this.convertProxyGroup(group, clashProxies);
+                        if (singboxGroup) {
+                            outbounds.push(singboxGroup);
+                        }
+                    });
+                }
 
                 return outbounds;
+            }
+
+            convertProxyGroup(clashGroup, clashProxies) {
+                if (!clashGroup || !clashGroup.name) return null;
+
+                const baseConfig = {
+                    tag: clashGroup.name
+                };
+
+                switch (clashGroup.type) {
+                    case 'select':
+                        return {
+                            type: "selector",
+                            ...baseConfig,
+                            outbounds: clashGroup.proxies || [],
+                            default: clashGroup.proxies && clashGroup.proxies[0] || "direct"
+                        };
+
+                    case 'url-test':
+                        return {
+                            type: "urltest",
+                            ...baseConfig,
+                            outbounds: this.getGroupOutbounds(clashGroup, clashProxies),
+                            url: clashGroup.url || "http://www.gstatic.com/generate_204",
+                            interval: clashGroup.interval ? `${clashGroup.interval}s` : "300s",
+                            tolerance: clashGroup.tolerance || 50
+                        };
+
+                    case 'fallback':
+                        return {
+                            type: "urltest",
+                            ...baseConfig,
+                            outbounds: this.getGroupOutbounds(clashGroup, clashProxies),
+                            url: clashGroup.url || "http://www.gstatic.com/generate_204",
+                            interval: clashGroup.interval ? `${clashGroup.interval}s` : "300s"
+                        };
+
+                    case 'load-balance':
+                        return {
+                            type: "selector",
+                            ...baseConfig,
+                            outbounds: this.getGroupOutbounds(clashGroup, clashProxies)
+                        };
+
+                    case 'relay':
+                        // Sing-box 中的链式代理需要特殊处理
+                        console.warn(`代理组 ${clashGroup.name} 使用了 relay 类型，转换为 selector`);
+                        return {
+                            type: "selector",
+                            ...baseConfig,
+                            outbounds: clashGroup.proxies || []
+                        };
+
+                    default:
+                        console.warn(`不支持的代理组类型: ${clashGroup.type}`);
+                        return {
+                            type: "selector",
+                            ...baseConfig,
+                            outbounds: clashGroup.proxies || []
+                        };
+                }
+            }
+
+            getGroupOutbounds(clashGroup, clashProxies) {
+                let outbounds = [];
+
+                // 如果设置了 include-all，包含所有代理
+                if (clashGroup['include-all'] && clashProxies) {
+                    outbounds = clashProxies.map(p => p.name);
+                }
+
+                // 添加显式指定的代理
+                if (clashGroup.proxies) {
+                    outbounds = [...outbounds, ...clashGroup.proxies];
+                }
+
+                // 去重
+                return [...new Set(outbounds)];
             }
 
             convertProxy(clashProxy) {
@@ -646,39 +829,78 @@
                 }
             }
 
-            convertRoute(clashRules, proxyGroups) {
+            convertRoute(clashRules, proxyGroups, ruleProviders) {
                 const rules = [];
                 const ruleSet = [];
 
+                // 处理 rule-providers
+                if (ruleProviders) {
+                    Object.entries(ruleProviders).forEach(([name, provider]) => {
+                        ruleSet.push({
+                            tag: name,
+                            type: "remote",
+                            format: provider.format === 'yaml' ? 'yaml' : 'source',
+                            url: provider.url,
+                            download_detour: "direct",
+                            update_interval: provider.interval ? `${provider.interval}s` : "86400s"
+                        });
+                    });
+                }
+
                 // 转换规则
                 clashRules.forEach(rule => {
-                    const [type, value, target] = rule.split(',');
-                    if (!type || !value || !target) return;
+                    if (typeof rule !== 'string') return;
+                    
+                    const parts = rule.split(',');
+                    if (parts.length < 2) return;
+
+                    const type = parts[0].trim();
+                    const value = parts[1].trim();
+                    const target = parts[2] ? parts[2].trim() : 'proxy';
+                    const noResolve = parts.includes('no-resolve');
 
                     const singboxRule = {
-                        outbound: target.trim()
+                        outbound: target
                     };
 
-                    switch (type.trim().toUpperCase()) {
+                    switch (type.toUpperCase()) {
                         case 'DOMAIN':
-                            singboxRule.domain = [value.trim()];
+                            singboxRule.domain = [value];
                             break;
                         case 'DOMAIN-SUFFIX':
-                            singboxRule.domain_suffix = [value.trim()];
+                            singboxRule.domain_suffix = [value];
                             break;
                         case 'DOMAIN-KEYWORD':
-                            singboxRule.domain_keyword = [value.trim()];
+                            singboxRule.domain_keyword = [value];
                             break;
                         case 'IP-CIDR':
-                            singboxRule.ip_cidr = [value.trim()];
+                            singboxRule.ip_cidr = [value];
+                            if (noResolve) singboxRule.ip_is_private = false;
                             break;
                         case 'GEOIP':
-                            singboxRule.geoip = [value.trim()];
+                            singboxRule.geoip = [value === 'CN' ? 'cn' : value.toLowerCase()];
+                            if (noResolve) singboxRule.ip_is_private = false;
                             break;
                         case 'GEOSITE':
-                            singboxRule.geosite = [value.trim()];
+                            // 处理特殊的 geosite 格式
+                            if (value.includes('@')) {
+                                const [site, region] = value.split('@');
+                                singboxRule.geosite = [`${site}-${region}`];
+                            } else if (value.includes('-!')) {
+                                // 处理排除规则，如 category-scholar-!cn
+                                singboxRule.geosite = [value.replace('-!', '-not-')];
+                            } else {
+                                singboxRule.geosite = [value];
+                            }
                             break;
+                        case 'RULE-SET':
+                            singboxRule.rule_set = [value];
+                            break;
+                        case 'MATCH':
+                            // MATCH 规则转为 final
+                            return;
                         default:
+                            console.warn(`不支持的规则类型: ${type}`);
                             return;
                     }
 
